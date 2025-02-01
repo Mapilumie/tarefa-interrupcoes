@@ -1,207 +1,208 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <pico/stdlib.h>
-#include <hardware/gpio.h>
-#include <hardware/pwm.h>
+#include <math.h>
+#include "pico/stdlib.h"
+#include "hardware/pio.h"
+#include "hardware/clocks.h"
+#include "hardware/adc.h"
+#include "pico/bootrom.h"
+#include "hardware/pwm.h"
 
 //arquivo .pio
 #include "interuption.pio.h"
 
-//número de LEDs
-#define NUM_PIXELS 25
+// Define GPIO pins
+#define BUTTON_A_PIN 5
+#define BUTTON_B_PIN 6
+#define LED_RGB_RED_PIN 11
+#define LED_RGB_GREEN_PIN 12
+#define LED_RGB_BLUE_PIN 13
+#define WS2812_PIN 7
 
-//pino de saída
-#define OUT_PIN 9
+// Global variables
+volatile int number = 0; // Number to display
+volatile bool button_a_pressed = false;
+volatile bool button_b_pressed = false;
 
-// Definição dos LEDs RGB
-#define RLED_PIN 17
-#define GLED_PIN 15
-#define BLED_PIN 16
-
-// Definição dos botões
-#define BTNA_PIN 5
-#define BTNB_PIN 6
-
-void init_all() {
-    gpio_init(RLED_PIN);
-    gpio_set_dir(RLED_PIN, GPIO_OUT);
-    gpio_put(RLED_PIN, 0);
-
-    gpio_init(GLED_PIN);
-    gpio_set_dir(GLED_PIN, GPIO_OUT);
-    gpio_put(GLED_PIN, 0);
-
-    gpio_init(BLED_PIN);
-    gpio_set_dir(BLED_PIN, GPIO_OUT);
-    gpio_put(BLED_PIN, 0);
-
-    gpio_init(BTNA_PIN);
-    gpio_set_dir(BTNA_PIN, GPIO_IN);
-    gpio_pull_up(BTNA_PIN);
-
-    gpio_init(BTNB_PIN);
-    gpio_set_dir(BTNB_PIN, GPIO_IN);
-    gpio_pull_up(BTNB_PIN);
-}
-
-void get_led(bool R, bool G, bool B) {
-    gpio_put(RLED_PIN, R);
-    gpio_put(GLED_PIN, G);
-    gpio_put(BLED_PIN, B);
-}
-
-
-//todos apagados
-double desenho_apagado[25] = {
+double number_1[25] = {
     0.0, 0.0, 0.0, 0.0, 0.0,
     0.0, 0.0, 0.0, 0.0, 0.0,
-    0.0, 0.0, 0.0, 0.0, 0.0,
+    0.0, 0.0, 1.0, 0.0, 0.0,
     0.0, 0.0, 0.0, 0.0, 0.0,
     0.0, 0.0, 0.0, 0.0, 0.0
 };
 
-//ativando todas as cores
-double luz_total[25] = {
-    1.0, 1.0, 1.0, 1.0, 1.0,
-    1.0, 1.0, 1.0, 1.0, 1.0,
-    1.0, 1.0, 1.0, 1.0, 1.0,
-    1.0, 1.0, 1.0, 1.0, 1.0,
-    1.0, 1.0, 1.0, 1.0, 1.0
-};
-//ativando todas as cores com 80% de intensidade
-double luz_80_total[25] = {
-    0.8, 0.8, 0.8, 0.8, 0.8,
-    0.8, 0.8, 0.8, 0.8, 0.8,
-    0.8, 0.8, 0.8, 0.8, 0.8,
-    0.8, 0.8, 0.8, 0.8, 0.8,
-    0.8, 0.8, 0.8, 0.8, 0.8
-};
-//ativando todas as cores com 50% de intensidade
-double luz_50_total[25] = {
-    0.5, 0.5, 0.5, 0.5, 0.5,
-    0.5, 0.5, 0.5, 0.5, 0.5,
-    0.5, 0.5, 0.5, 0.5, 0.5,
-    0.5, 0.5, 0.5, 0.5, 0.5,
-    0.5, 0.5, 0.5, 0.5, 0.5
+double number_2[25] = {
+    0.0, 0.0, 0.0, 0.0, 0.0,
+    0.0, 0.0, 0.0, 0.0, 0.0,
+    0.0, 1.0, 0.0, 1.0, 0.0,
+    0.0, 0.0, 0.0, 0.0, 0.0,
+    0.0, 0.0, 0.0, 0.0, 0.0
 };
 
-//ativando todas as cores com 20% de intensidade
-double luz_20_total[25] = {
-    0.2, 0.2, 0.2, 0.2, 0.2,
-    0.2, 0.2, 0.2, 0.2, 0.2,
-    0.2, 0.2, 0.2, 0.2, 0.2,
-    0.2, 0.2, 0.2, 0.2, 0.2,
-    0.2, 0.2, 0.2, 0.2, 0.2
+double number_3[25] = {
+    0.0, 0.0, 0.0, 0.0, 0.0,
+    0.0, 0.0, 1.0, 0.0, 0.0,
+    0.0, 0.0, 0.0, 0.0, 0.0,
+    0.0, 1.0, 0.0, 1.0, 0.0,
+    0.0, 0.0, 0.0, 0.0, 0.0
 };
 
-//rotina para definição da intensidade de cores do led
-uint32_t matrix_rgb(double b, double r, double g)
-{
-  unsigned char R, G, B;
-  R = r * 255;
-  G = g * 255;
-  B = b * 255;
-  return (G << 24) | (R << 16) | (B << 8);
-}
+double number_4[25] = {
+    0.0, 0.0, 0.0, 0.0, 0.0,
+    0.0, 1.0, 0.0, 1.0, 0.0,
+    0.0, 0.0, 0.0, 0.0, 0.0,
+    0.0, 1.0, 0.0, 1.0, 0.0,
+    0.0, 0.0, 0.0, 0.0, 0.0
+};
 
-//rotina para acionar a matrix de leds - ws2812b
-void desenho_pio(double *desenho, uint32_t valor_led, PIO pio, uint sm, double r, double g, double b){
+double number_5[25] = {
+    1.0, 0.0, 0.0, 0.0, 1.0,
+    0.0, 0.0, 0.0, 0.0, 0.0,
+    0.0, 0.0, 1.0, 0.0, 0.0,
+    0.0, 0.0, 0.0, 0.0, 0.0,
+    1.0, 0.0, 0.0, 0.0, 1.0
+};
 
-    for (int16_t i = 0; i < NUM_PIXELS; i++) {
-        // Define a cor vermelha para cada LED
-        valor_led = matrix_rgb(0.0, desenho[24 - i], 0.0); // Apenas o valor vermelho está ativo
-        pio_sm_put_blocking(pio, sm, valor_led); // Envia o valor para o LED
-    }
-}
-void desenho_apagado_total(double *desenho, uint32_t valor_led, PIO pio, uint sm, double r, double g, double b){
+double number_6[25] = {
+    1.0, 0.0, 1.0, 0.0, 1.0,
+    0.0, 0.0, 0.0, 0.0, 0.0,
+    0.0, 0.0, 0.0, 0.0, 0.0,
+    0.0, 0.0, 0.0, 0.0, 0.0,
+    1.0, 0.0, 1.0, 0.0, 1.0
+};
 
-    for (int16_t i = 0; i < NUM_PIXELS; i++) {
-        // Define a cor nenhuma
-        valor_led = matrix_rgb(0.0, 0.0, 0.0); // Nenhum ativo
-        pio_sm_put_blocking(pio, sm, valor_led); // Envia o valor para o LED
-    }
-}
-//desenhando o azul completo
-void desenho_azul(double *desenho, uint32_t valor_led, PIO pio, uint sm, double r, double g, double b){
+double number_7[25] = {
+    1.0, 0.0, 1.0, 0.0, 1.0,
+    0.0, 0.0, 0.0, 0.0, 0.0,
+    0.0, 0.0, 1.0, 0.0, 0.0,
+    0.0, 0.0, 0.0, 0.0, 0.0,
+    1.0, 0.0, 1.0, 0.0, 1.0
+};
 
-    for (int16_t i = 0; i < NUM_PIXELS; i++) {
-        // Define a cor azul para cada LED
-        valor_led = matrix_rgb(desenho[24 - i], 0.0, 0.0); // Apenas o valor azul está ativo
-        pio_sm_put_blocking(pio, sm, valor_led); // Envia o valor para o LED
-    }
-}
+double number_8[25] = {
+    1.0, 0.0, 1.0, 0.0, 1.0,
+    0.0, 0.0, 0.0, 0.0, 0.0,
+    1.0, 0.0, 0.0, 0.0, 1.0,
+    0.0, 0.0, 0.0, 0.0, 0.0,
+    1.0, 0.0, 1.0, 0.0, 1.0
+};
 
-void desenho_verde(double *desenho, uint32_t valor_led, PIO pio, uint sm, double r, double g, double b){
+double number_9[25] = {
+    1.0, 0.0, 1.0, 0.0, 1.0,
+    0.0, 0.0, 0.0, 0.0, 0.0,
+    1.0, 0.0, 1.0, 0.0, 1.0,
+    0.0, 0.0, 0.0, 0.0, 0.0,
+    1.0, 0.0, 1.0, 0.0, 1.0
+};
 
-    for (int16_t i = 0; i < NUM_PIXELS; i++) {
-        // Define a cor azul para cada LED
-        valor_led = matrix_rgb(0.0, 0.0, desenho[24 - i]); // Apenas o valor verde está ativo
-        pio_sm_put_blocking(pio, sm, valor_led); // Envia o valor para o LED
-    }
-}
-void desenho_branco(double *desenho, uint32_t valor_led, PIO pio, uint sm, double r, double g, double b){
+// Function prototypes
+void button_a_isr();
+void button_b_isr();
+void display_number(int num);
+void debounce();
+void init_all_pins();
 
-    for (int16_t i = 0; i < NUM_PIXELS; i++) {
-        // Define a cor azul para cada LED
-        valor_led = matrix_rgb(desenho[24 - i], desenho[24 - i], desenho[24 - i]); // Todos ativos
-        pio_sm_put_blocking(pio, sm, valor_led); // Envia o valor para o LED
-    }
-}
-// Inicializa o sistema de clock
-void inicializar_clock() {
-    bool ok = set_sys_clock_khz(128000, false);
-    if (ok) {
-        printf("Clock set to %ld\n", clock_get_hz(clk_sys));
-    } else {
-        printf("Falha ao configurar o clock\n");
-    }
-}
-
-// Configura a PIO
-void configurar_pio(PIO pio, uint *offset, uint *sm) {
-    *offset = pio_add_program(pio, &interrupt_program);
-    *sm = pio_claim_unused_sm(pio, true);
-    interrupt_program_init(pio, *sm, *offset, OUT_PIN);
-}
-
-void todos_azul(double *luz_total, uint32_t valor_led, PIO pio, uint sm, double r, double g, double b ){
-    desenho_azul(luz_total,valor_led, pio, sm, r, g, b );
-}
-void todos_vermelho(double *luz_80_total, uint32_t valor_led, PIO pio, uint sm, double r, double g, double b ){
-    desenho_pio(luz_80_total, valor_led, pio, sm, r, g, b);    
-}
-void todos_verde(double *luz_50_total, uint32_t valor_led, PIO pio, uint sm, double r, double g, double b ){
-    desenho_verde(luz_50_total, valor_led, pio, sm, r, g, b); 
-}
-void todos_branco(double *luz_20_total, uint32_t valor_led, PIO pio, uint sm, double r, double g, double b ){
-    desenho_branco(luz_20_total, valor_led, pio, sm, r, g, b);
-}
-
-
-
-// Função principal
 int main() {
-    PIO pio = pio0;
-    uint offset, sm;
-    uint32_t valor_led;
-    double r = 0.0, b = 0.0, g = 0.0;
-
-    // Inicializa clock, stdio e configurações
+    // Initialize stdio
     stdio_init_all();
-    init_all();
-    inicializar_clock();
-    configurar_pio(pio, &offset, &sm);
+    init_all_pins();// Initialize all pins
 
-    printf("Sistema inicializado. Aguardando entrada...\n");
-    todos_verde(luz_total, valor_led, pio, sm, r, g ,b);
+    // Set up interrupts
+    gpio_set_irq_enabled_with_callback(BUTTON_A_PIN, GPIO_IRQ_EDGE_FALL, true, &button_a_isr);
+    gpio_set_irq_enabled_with_callback(BUTTON_B_PIN, GPIO_IRQ_EDGE_FALL, true, &button_b_isr);
 
+    // Initialize WS2812
+    ws2812_init(WS2812_PIN);
+
+    // Main loop
     while (true) {
-        if (!gpio_get(BTNA_PIN)){
-            todos_azul(luz_total, valor_led, pio, sm, r, g ,b);
+        // Blink the red LED continuously at 5 Hz
+        gpio_put(LED_RGB_RED_PIN, 1);
+        sleep_ms(100);
+        gpio_put(LED_RGB_RED_PIN, 0);
+        sleep_ms(100);
+
+        // Check for button presses
+        debounce();
+        if (button_a_pressed) {
+            number++;
+            display_number(number);
+            button_a_pressed = false;
         }
-        sleep_ms(5); // Atraso para evitar múltiplas leituras
+        if (button_b_pressed) {
+            number--;
+            display_number(number);
+            button_b_pressed = false;
+        }
     }
+}
 
-    return 0;
+//************************************ */
 
+void init_all_pins() {
+    // Initialize all pins
+    gpio_init(BUTTON_A_PIN);
+    gpio_init(BUTTON_B_PIN);
+    gpio_init(LED_RGB_RED_PIN);
+    gpio_init(LED_RGB_GREEN_PIN);
+    gpio_init(LED_RGB_BLUE_PIN);
+    gpio_init(WS2812_PIN);
+
+    // Set directions
+    gpio_set_dir(BUTTON_A_PIN, GPIO_IN);
+    gpio_set_dir(BUTTON_B_PIN, GPIO_IN);
+    gpio_set_dir(LED_RGB_RED_PIN, GPIO_OUT);
+    gpio_set_dir(LED_RGB_GREEN_PIN, GPIO_OUT);
+    gpio_set_dir(LED_RGB_BLUE_PIN, GPIO_OUT);
+    gpio_set_dir(WS2812_PIN, GPIO_OUT);
+
+    // Set pull-up resistors
+    gpio_pull_up(BUTTON_A_PIN);
+    gpio_pull_up(BUTTON_B_PIN);
+}
+
+// Interrupt Service Routine for Button A
+void button_a_isr() {
+    button_a_pressed = true;
+}
+
+// Interrupt Service Routine for Button B
+void button_b_isr() {
+    button_b_pressed = true;
+}
+
+// Debounce function
+void debounce() {
+    static uint32_t last_interrupt_time = 0;
+    uint32_t interrupt_time = to_ms_since_boot(get_absolute_time());
+
+    if (interrupt_time - last_interrupt_time > 200) { // 200 ms debounce time
+        last_interrupt_time = interrupt_time;
+    } else {
+        button_a_pressed = false;
+        button_b_pressed = false;
+    }
+}
+
+// Function to display number on WS2812
+void display_number(int num) {
+    // Ensure the number is between 0 and 9
+   if(num>9){
+       num=0; 
+    } 
+
+    switch (num)
+    {
+    case 1:
+        
+        break;
+    
+
+    
+    default:
+        break;
+    }
+    // Convert number to LED pattern (example implementation)
+    //ws2812_set_color(WS2812_PIN, num); // This function should set the color based on the number
 }
